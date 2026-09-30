@@ -14,7 +14,7 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
-import { writeFile, mkdir, readFile } from "fs/promises";
+import { writeFile, mkdir, readFile, rename } from "fs/promises";
 import { join, extname, basename, dirname, resolve } from "path";
 import { existsSync, readFileSync } from "fs";
 import { spawn } from "child_process";
@@ -91,11 +91,18 @@ const VALID_ASPECTS = [
   "4:5", "5:4", "21:9", "1:4", "1:8", "4:1", "8:1",
 ] as const;
 
-// Cost rates per 1M tokens
-const COST_RATES: Record<string, { input: number; imageOutput: number }> = {
-  "gemini-3.1-flash-image-preview": { input: 0.25, imageOutput: 60 },
-  "gemini-3-pro-image-preview": { input: 2.0, imageOutput: 120 },
+// Paid tier (standard) rates in USD per 1M tokens, per
+// https://ai.google.dev/gemini-api/docs/pricing (checked 2026-09-30).
+// textOutput also covers thinking tokens.
+const COST_RATES: Record<string, { input: number; textOutput: number; imageOutput: number }> = {
+  "gemini-3.1-flash-image-preview": { input: 0.5, textOutput: 3, imageOutput: 60 },
+  "gemini-3-pro-image-preview": { input: 2.0, textOutput: 12, imageOutput: 120 },
 };
+
+// Grounding with Google Search: 5,000 free requests per month shared across
+// all Gemini 3.x models, then $14 per 1,000. The CLI can't see the account's
+// monthly usage, so every query is priced at the list rate (upper bound).
+const SEARCH_QUERY_COST = 14 / 1000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -120,8 +127,27 @@ interface CostEntry {
   aspect: string | null;
   prompt_tokens: number;
   output_tokens: number;
-  estimated_cost: number;
+  image_tokens?: number;
+  text_tokens?: number;
+  thoughts_tokens?: number;
+  search_queries?: number;
+  grounding_cost?: number;
+  // null when the model has no known pricing
+  estimated_cost: number | null;
   output_file: string;
+}
+
+interface TokenUsage {
+  promptTokens: number;
+  imageTokens: number;
+  textTokens: number;
+  thoughtsTokens: number;
+}
+
+interface CostBreakdown {
+  tokenCost: number;
+  groundingCost: number;
+  total: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,16 +231,26 @@ async function logCost(entry: CostEntry): Promise<void> {
 
   let entries: CostEntry[] = [];
   if (existsSync(COST_LOG_PATH)) {
+    const raw = await readFile(COST_LOG_PATH, "utf-8");
     try {
-      const raw = await readFile(COST_LOG_PATH, "utf-8");
-      entries = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) throw new Error("not an array");
+      entries = parsed;
     } catch {
-      entries = [];
+      // Keep the unreadable history instead of overwriting it
+      const backupPath = `${COST_LOG_PATH}.corrupt-${Date.now()}`;
+      await rename(COST_LOG_PATH, backupPath);
+      console.error(
+        `\x1b[33mWarning:\x1b[0m cost log was unreadable, moved to ${backupPath} and started a new one.`
+      );
     }
   }
 
   entries.push(entry);
-  await writeFile(COST_LOG_PATH, JSON.stringify(entries, null, 2));
+  // Write to a temp file first so an interrupted write can't corrupt the log
+  const tmpPath = `${COST_LOG_PATH}.tmp`;
+  await writeFile(tmpPath, JSON.stringify(entries, null, 2));
+  await rename(tmpPath, COST_LOG_PATH);
 }
 
 function printCostSummary(): void {
@@ -226,8 +262,9 @@ function printCostSummary(): void {
   let entries: CostEntry[];
   try {
     entries = JSON.parse(readFileSync(COST_LOG_PATH, "utf-8"));
+    if (!Array.isArray(entries)) throw new Error("not an array");
   } catch {
-    console.log("\x1b[31mError reading cost log.\x1b[0m");
+    console.log(`\x1b[31mError reading cost log:\x1b[0m ${COST_LOG_PATH} is not a valid JSON array.`);
     return;
   }
 
@@ -237,20 +274,35 @@ function printCostSummary(): void {
   }
 
   let totalCost = 0;
+  let groundingCost = 0;
+  let searchQueries = 0;
+  let unpriced = 0;
   const byModel: Record<string, { count: number; cost: number }> = {};
 
   for (const e of entries) {
-    totalCost += e.estimated_cost;
+    const cost = e.estimated_cost ?? 0;
+    if (e.estimated_cost == null) unpriced++;
+    totalCost += cost;
+    groundingCost += e.grounding_cost ?? 0;
+    searchQueries += e.search_queries ?? 0;
     const m = e.model;
     if (!byModel[m]) byModel[m] = { count: 0, cost: 0 };
     byModel[m].count++;
-    byModel[m].cost += e.estimated_cost;
+    byModel[m].cost += cost;
   }
 
   console.log(`\x1b[36m[nano-banana]\x1b[0m Cost Summary`);
   console.log(`\x1b[90m${"─".repeat(50)}\x1b[0m`);
   console.log(`  Total generations: ${entries.length}`);
   console.log(`  Total cost:        \x1b[33m$${totalCost.toFixed(4)}\x1b[0m`);
+  if (searchQueries > 0) {
+    console.log(
+      `  Incl. search:      $${groundingCost.toFixed(4)} (${searchQueries} queries, first 5,000/month free)`
+    );
+  }
+  if (unpriced > 0) {
+    console.log(`  \x1b[33mNot priced:        ${unpriced} generation(s) with an unknown model\x1b[0m`);
+  }
   console.log("");
 
   for (const [model, data] of Object.entries(byModel)) {
@@ -264,15 +316,45 @@ function printCostSummary(): void {
   console.log(`\x1b[90mLog: ${COST_LOG_PATH}\x1b[0m`);
 }
 
+// Returns null for models without known pricing instead of guessing.
 function calculateCost(
   model: string,
-  promptTokens: number,
-  outputTokens: number
-): number {
-  const rates = COST_RATES[model] || COST_RATES[DEFAULT_MODEL];
-  const inputCost = (promptTokens / 1_000_000) * rates.input;
-  const outputCost = (outputTokens / 1_000_000) * rates.imageOutput;
-  return inputCost + outputCost;
+  usage: TokenUsage,
+  searchQueries: number
+): CostBreakdown | null {
+  const rates = COST_RATES[model];
+  if (!rates) return null;
+  const tokenCost =
+    (usage.promptTokens * rates.input +
+      usage.imageTokens * rates.imageOutput +
+      (usage.textTokens + usage.thoughtsTokens) * rates.textOutput) /
+    1_000_000;
+  const groundingCost = searchQueries * SEARCH_QUERY_COST;
+  return { tokenCost, groundingCost, total: tokenCost + groundingCost };
+}
+
+// Splits usageMetadata into billable buckets. Output tokens without a
+// modality breakdown are treated as image tokens (the pricier rate).
+function extractTokenUsage(usage: {
+  promptTokenCount?: number;
+  toolUsePromptTokenCount?: number;
+  candidatesTokenCount?: number;
+  candidatesTokensDetails?: { modality?: string; tokenCount?: number }[];
+  thoughtsTokenCount?: number;
+}): TokenUsage {
+  const candidates = usage.candidatesTokenCount || 0;
+  const details = usage.candidatesTokensDetails;
+  const imageTokens = details
+    ? details
+        .filter((d) => d.modality === "IMAGE")
+        .reduce((sum, d) => sum + (d.tokenCount || 0), 0)
+    : candidates;
+  return {
+    promptTokens: (usage.promptTokenCount || 0) + (usage.toolUsePromptTokenCount || 0),
+    imageTokens,
+    textTokens: Math.max(candidates - imageTokens, 0),
+    thoughtsTokens: usage.thoughtsTokenCount || 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -621,13 +703,27 @@ async function generateImage(options: Options): Promise<string[]> {
   // Cost tracking
   const usage = response.usageMetadata;
   if (usage) {
-    const promptTokens = usage.promptTokenCount || 0;
-    const outputTokens = usage.candidatesTokenCount || 0;
-    const cost = calculateCost(modelName, promptTokens, outputTokens);
+    const tokens = extractTokenUsage(usage);
+    const searchQueries =
+      response.candidates?.[0]?.groundingMetadata?.webSearchQueries?.length || 0;
+    const cost = calculateCost(modelName, tokens, searchQueries);
 
-    console.log(
-      `\x1b[90mCost: ~$${cost.toFixed(4)} (${promptTokens} input + ${outputTokens} output tokens)\x1b[0m`
-    );
+    const tokenSummary =
+      `${tokens.promptTokens} input, ${tokens.imageTokens} image, ` +
+      `${tokens.textTokens} text, ${tokens.thoughtsTokens} thinking tokens`;
+    if (cost) {
+      const search =
+        searchQueries > 0
+          ? ` + ${searchQueries} search $${cost.groundingCost.toFixed(4)}, first 5,000/month free`
+          : "";
+      console.log(
+        `\x1b[90mCost: ~$${cost.total.toFixed(4)} (tokens $${cost.tokenCost.toFixed(4)}${search}; ${tokenSummary})\x1b[0m`
+      );
+    } else {
+      console.log(
+        `\x1b[33mCost: unknown, no pricing for model ${modelName} (${tokenSummary}).\x1b[0m`
+      );
+    }
 
     // Log to file
     const entry: CostEntry = {
@@ -635,9 +731,14 @@ async function generateImage(options: Options): Promise<string[]> {
       model: modelName,
       size: options.size,
       aspect: options.aspectRatio || null,
-      prompt_tokens: promptTokens,
-      output_tokens: outputTokens,
-      estimated_cost: cost,
+      prompt_tokens: tokens.promptTokens,
+      output_tokens: usage.candidatesTokenCount || 0,
+      image_tokens: tokens.imageTokens,
+      text_tokens: tokens.textTokens,
+      thoughts_tokens: tokens.thoughtsTokens,
+      search_queries: searchQueries,
+      grounding_cost: cost?.groundingCost ?? 0,
+      estimated_cost: cost ? cost.total : null,
       output_file: savedFiles[0] || "",
     };
 

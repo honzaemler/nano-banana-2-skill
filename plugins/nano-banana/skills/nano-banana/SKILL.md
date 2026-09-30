@@ -74,8 +74,8 @@ Get a Gemini API key at: https://aistudio.google.com/apikey
 |------|-------------|------------|
 | `512` | ~$0.045 | Flash only |
 | `1K` | ~$0.067 | ~$0.134 |
-| `2K` | ~$0.101 | ~$0.201 |
-| `4K` | ~$0.151 | ~$0.302 |
+| `2K` | ~$0.101 | ~$0.134 |
+| `4K` | ~$0.151 | ~$0.24 |
 
 ## Aspect Ratios
 
@@ -143,7 +143,7 @@ nano-banana "pixel art character in style of first image, 256x256" -r style.png 
 
 ## Cost Tracking
 
-Every generation is logged to `~/.nano-banana/costs.json`. View summary:
+Every generation is logged to `~/.nano-banana/costs.json`. Estimates include thinking tokens and Google Search grounding at list price (first 5,000 queries/month are free, so it is an upper bound). View summary:
 
 ```bash
 nano-banana --costs

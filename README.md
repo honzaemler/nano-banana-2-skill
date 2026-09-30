@@ -163,8 +163,8 @@ nano-banana "pixel art character, 256x256" -r style.png -r blank-256x256.png -o 
 |------|-----------|------------|----------|
 | `512` | ~512x512 | ~$0.045 | N/A (Flash only) |
 | `1K` | ~1024x1024 | ~$0.067 | ~$0.134 |
-| `2K` | ~2048x2048 | ~$0.101 | ~$0.201 |
-| `4K` | ~4096x4096 | ~$0.151 | ~$0.302 |
+| `2K` | ~2048x2048 | ~$0.101 | ~$0.134 |
+| `4K` | ~4096x4096 | ~$0.151 | ~$0.24 |
 
 ## Cost Tracking
 
@@ -175,6 +175,8 @@ nano-banana --costs
 ```
 
 Shows total generations, total spend, and per-model breakdown.
+
+Estimates use paid-tier list prices and include text, thinking and tool-use tokens. Every request also runs Google Search grounding, which is counted at $14 per 1,000 queries even though the first 5,000 per month are free, so the estimate is an upper bound. Models without known pricing are logged as "not priced".
 
 ## API Key Configuration
 
