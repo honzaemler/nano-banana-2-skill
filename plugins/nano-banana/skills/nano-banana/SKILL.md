@@ -58,7 +58,7 @@ Get a Gemini API key at: https://aistudio.google.com/apikey
 | `-d, --dir` | current directory | Output directory |
 | `-r, --ref` | - | Reference image (can use multiple times) |
 | `-t, --transparent` | - | Generate on green screen, remove background (FFmpeg) |
-| `--api-key` | - | Gemini API key (overrides env/file) |
+| `--api-key-stdin` | - | Read the Gemini API key from stdin (overrides env/file) |
 | `--costs` | - | Show cost summary |
 
 ## Models
@@ -192,7 +192,7 @@ nano-banana "mobile app onboarding screen" -a 9:16
 ## API Key Setup
 
 The CLI resolves the Gemini API key in this order:
-1. `--api-key` flag
+1. `--api-key-stdin` (key piped in on stdin)
 2. `GEMINI_API_KEY` environment variable
 3. `.env` file in current directory
 4. `.env` file next to the CLI script

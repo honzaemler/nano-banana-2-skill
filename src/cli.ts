@@ -23,7 +23,7 @@ import { homedir } from "os";
 
 // ---------------------------------------------------------------------------
 // Environment / API key resolution
-// Priority: --api-key flag > GEMINI_API_KEY env var > .env in cwd > .env next
+// Priority: --api-key-stdin > GEMINI_API_KEY env var > .env in cwd > .env next
 // to this script > ~/.nano-banana/.env
 // ---------------------------------------------------------------------------
 
@@ -539,6 +539,20 @@ async function removeBackground(inputPath: string): Promise<string> {
 // Argument parsing
 // ---------------------------------------------------------------------------
 
+function readApiKeyFromStdin(): string {
+  if (process.stdin.isTTY) {
+    console.error("\x1b[31mError:\x1b[0m --api-key-stdin expects the key on stdin, e.g.:");
+    console.error("  security find-generic-password -s gemini -w | nano-banana \"prompt\" --api-key-stdin");
+    process.exit(1);
+  }
+  const key = readFileSync(0, "utf-8").trim();
+  if (!key) {
+    console.error("\x1b[31mError:\x1b[0m --api-key-stdin received an empty key.");
+    process.exit(1);
+  }
+  return key;
+}
+
 function parseArgs(): Options | "costs" {
   const args = process.argv.slice(2);
 
@@ -562,7 +576,7 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
   -d, --dir         Output directory [default: current directory]
   -r, --ref         Reference image(s) - can use multiple times
   -t, --transparent Generate on green screen, then remove background (FFmpeg colorkey + despill)
-  --api-key         Gemini API key (overrides env/file)
+  --api-key-stdin   Read the Gemini API key from stdin (overrides env/file)
   --force           Skip the monthly budget check for this request
   --costs           Show cost summary from generation history
   -h, --help        Show this help
@@ -603,7 +617,7 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
   Change it in ~/.nano-banana/config.json: {"monthlyBudget": 25}, or null to disable.
 
 \x1b[33mAPI Key:\x1b[0m
-  Set GEMINI_API_KEY in your environment, a .env file, or pass --api-key.
+  Set GEMINI_API_KEY in your environment or a .env file, or pipe it in with --api-key-stdin.
   Get a key at: https://aistudio.google.com/apikey
 `);
     process.exit(0);
@@ -657,8 +671,13 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
       options.referenceImages.push(args[++i]);
     } else if (arg === "-t" || arg === "--transparent") {
       options.transparent = true;
-    } else if (arg === "--api-key") {
-      options.apiKey = args[++i];
+    } else if (arg === "--api-key" || arg.startsWith("--api-key=")) {
+      // Keys in argv end up in shell history and are visible in `ps`
+      console.error("\x1b[31mError:\x1b[0m --api-key was removed because it exposes the key in shell history and `ps`.");
+      console.error("  Use GEMINI_API_KEY, ~/.nano-banana/.env, or pipe the key in with --api-key-stdin.");
+      process.exit(1);
+    } else if (arg === "--api-key-stdin") {
+      options.apiKey = readApiKeyFromStdin();
     } else if (arg === "--force") {
       options.force = true;
     } else if (!arg.startsWith("-")) {
@@ -699,7 +718,7 @@ async function generateImage(options: Options): Promise<string[]> {
     console.error("Set it one of these ways:");
     console.error("  1. Export:    export GEMINI_API_KEY=your_key");
     console.error("  2. .env:     Create .env with GEMINI_API_KEY=your_key");
-    console.error("  3. Flag:     nano-banana \"prompt\" --api-key your_key");
+    console.error("  3. Stdin:    <command that prints the key> | nano-banana \"prompt\" --api-key-stdin");
     console.error("  4. Config:   mkdir -p ~/.nano-banana && echo 'GEMINI_API_KEY=your_key' > ~/.nano-banana/.env");
     console.error("");
     console.error("Get a key at: https://aistudio.google.com/apikey");

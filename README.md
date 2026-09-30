@@ -153,7 +153,7 @@ nano-banana "pixel art character, 256x256" -r style.png -r blank-256x256.png -o 
 | `-d, --dir` | current directory | Output directory |
 | `-r, --ref` | - | Reference image (can use multiple times) |
 | `-t, --transparent` | - | Generate on green screen, remove background (FFmpeg) |
-| `--api-key` | - | Gemini API key (overrides env/file) |
+| `--api-key-stdin` | - | Read the Gemini API key from stdin (overrides env/file) |
 | `--costs` | - | Show cost summary from generation history |
 | `-h, --help` | - | Show help |
 
@@ -192,13 +192,15 @@ Set `"monthlyBudget": null` to disable the guard. Pass `--force` to skip it for 
 
 The CLI resolves the Gemini API key in priority order:
 
-1. `--api-key` flag on the command line
+1. `--api-key-stdin` (key piped in on stdin)
 2. `GEMINI_API_KEY` environment variable
 3. `.env` file in the current working directory
 4. `.env` file in the repo root (next to `src/`)
 5. `~/.nano-banana/.env`
 
 Get a free key at [Google AI Studio](https://aistudio.google.com/apikey).
+
+There is no `--api-key <key>` flag: a key passed as an argument ends up in shell history and is visible to other processes via `ps`.
 
 ```bash
 # Option 1: Environment variable
@@ -213,8 +215,8 @@ mkdir -p ~/.nano-banana && chmod 700 ~/.nano-banana
 echo "GEMINI_API_KEY=your_key_here" > ~/.nano-banana/.env
 chmod 600 ~/.nano-banana/.env
 
-# Option 4: Pass directly
-nano-banana "your prompt" --api-key your_key_here
+# Option 4: Pipe it in, e.g. from the macOS Keychain
+security find-generic-password -s gemini -w | nano-banana "your prompt" --api-key-stdin
 ```
 
 ## How Transparent Mode Works
