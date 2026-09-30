@@ -20,8 +20,9 @@ bun install
 bun link
 
 # Set up your API key
-mkdir -p ~/.nano-banana
+mkdir -p ~/.nano-banana && chmod 700 ~/.nano-banana
 echo "GEMINI_API_KEY=your_key_here" > ~/.nano-banana/.env
+chmod 600 ~/.nano-banana/.env
 ```
 
 Get a Gemini API key at [Google AI Studio](https://aistudio.google.com/apikey).
@@ -193,10 +194,12 @@ export GEMINI_API_KEY=your_key_here
 
 # Option 2: .env file in current directory
 echo "GEMINI_API_KEY=your_key_here" > .env
+chmod 600 .env
 
 # Option 3: Global config
-mkdir -p ~/.nano-banana
+mkdir -p ~/.nano-banana && chmod 700 ~/.nano-banana
 echo "GEMINI_API_KEY=your_key_here" > ~/.nano-banana/.env
+chmod 600 ~/.nano-banana/.env
 
 # Option 4: Pass directly
 nano-banana "your prompt" --api-key your_key_here
