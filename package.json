@@ -7,8 +7,8 @@
     "nano-banana": "./src/cli.ts"
   },
   "scripts": {
-    "start": "bun run src/cli.ts",
-    "dev": "bun run src/cli.ts"
+    "start": "bun --no-env-file src/cli.ts",
+    "dev": "bun --no-env-file src/cli.ts"
   },
   "keywords": [
     "ai",

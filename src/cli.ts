@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 /**
  * Nano Banana 2 - AI Image Generation CLI
  * Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
@@ -27,15 +27,23 @@ import { homedir } from "os";
 // to this script > ~/.nano-banana/.env
 // ---------------------------------------------------------------------------
 
+// Only these keys are read from .env files. Anything else (e.g. a foreign
+// repo's secrets) is ignored so it never lands in process.env or child
+// processes. Bun's own .env autoload is disabled via --no-env-file in the
+// shebang for the same reason.
+const ENV_WHITELIST = new Set(["GEMINI_API_KEY"]);
+
 function loadEnvFile(path: string): void {
   if (!existsSync(path)) return;
   const content = readFileSync(path, "utf-8");
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
     if (trimmed && !trimmed.startsWith("#")) {
-      const [key, ...valueParts] = trimmed.split("=");
-      const value = valueParts.join("=").replace(/^["']|["']$/g, "");
-      if (key && value && !process.env[key]) {
+      const [rawKey, ...valueParts] = trimmed.split("=");
+      const key = rawKey.replace(/^export\s+/, "").trim();
+      if (!ENV_WHITELIST.has(key)) continue;
+      const value = valueParts.join("=").trim().replace(/^["']|["']$/g, "");
+      if (value && !process.env[key]) {
         process.env[key] = value;
       }
     }
