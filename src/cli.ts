@@ -333,8 +333,11 @@ function calculateCost(
   return { tokenCost, groundingCost, total: tokenCost + groundingCost };
 }
 
-// Splits usageMetadata into billable buckets. Output tokens without a
-// modality breakdown are treated as image tokens (the pricier rate).
+// Splits usageMetadata into billable buckets. Output tokens not reported as
+// IMAGE are priced at the text rate: Flash returns only an IMAGE entry in
+// candidatesTokensDetails and leaves ~380 tokens unlabeled (no text part, no
+// thoughtsTokenCount), which matches the published per-image price. Without
+// any breakdown, all output is treated as image tokens (the pricier rate).
 function extractTokenUsage(usage: {
   promptTokenCount?: number;
   toolUsePromptTokenCount?: number;
