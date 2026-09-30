@@ -178,6 +178,16 @@ Shows total generations, total spend, and per-model breakdown.
 
 Estimates use paid-tier list prices and include text, thinking and tool-use tokens. Every request also runs Google Search grounding, which is counted at $14 per 1,000 queries even though the first 5,000 per month are free, so the estimate is an upper bound. Models without known pricing are logged as "not priced".
 
+## Spending Guard
+
+Before each request the CLI adds this month's logged spend to an estimate for the request (published per-image price) and refuses to run if the total would exceed the monthly budget. The default budget is $10. Change or disable it in `~/.nano-banana/config.json`:
+
+```json
+{ "monthlyBudget": 25 }
+```
+
+Set `"monthlyBudget": null` to disable the guard. Pass `--force` to skip it for a single request. If the config or cost log can't be read, the guard refuses to run rather than assume nothing was spent.
+
 ## API Key Configuration
 
 The CLI resolves the Gemini API key in priority order:

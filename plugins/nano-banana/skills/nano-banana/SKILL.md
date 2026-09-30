@@ -149,6 +149,10 @@ Every generation is logged to `~/.nano-banana/costs.json`. Estimates include thi
 nano-banana --costs
 ```
 
+## Spending Guard
+
+Requests are refused once this month's logged spend plus the request's estimate would exceed the monthly budget ($10 by default, set in `~/.nano-banana/config.json` as `{"monthlyBudget": 25}`). When a request is refused, tell the user how much was spent and ask how to proceed. **Never add `--force` or raise the budget without the user's explicit approval.**
+
 ## Use Cases
 
 - **Landing page assets** - product mockups, UI previews

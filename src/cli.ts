@@ -104,6 +104,19 @@ const COST_RATES: Record<string, { input: number; textOutput: number; imageOutpu
 // monthly usage, so every query is priced at the list rate (upper bound).
 const SEARCH_QUERY_COST = 14 / 1000;
 
+// Published per-image prices (USD), used to estimate a request before it is
+// sent. Unknown models or sizes fall back to the most expensive known price.
+const IMAGE_PRICES: Record<string, Partial<Record<ImageSize, number>>> = {
+  "gemini-3.1-flash-image-preview": { "512": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151 },
+  "gemini-3-pro-image-preview": { "1K": 0.134, "2K": 0.134, "4K": 0.24 },
+};
+const MAX_IMAGE_PRICE = 0.24;
+
+// Monthly spending guard. Override in ~/.nano-banana/config.json with
+// {"monthlyBudget": 25}, or {"monthlyBudget": null} to disable it.
+const CONFIG_PATH = join(homedir(), ".nano-banana", "config.json");
+const DEFAULT_MONTHLY_BUDGET = 10;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -118,6 +131,7 @@ interface Options {
   apiKey: string | undefined;
   model: string;
   aspectRatio: string | undefined;
+  force: boolean;
 }
 
 interface CostEntry {
@@ -312,11 +326,89 @@ function printCostSummary(): void {
     console.log(`    Cost:        $${data.cost.toFixed(4)}`);
   }
 
+  try {
+    const budget = loadMonthlyBudget();
+    const spent = monthToDateSpend();
+    console.log(
+      budget === null
+        ? `  This month:  $${spent.toFixed(4)} (no budget set)`
+        : `  This month:  $${spent.toFixed(4)} of $${budget.toFixed(2)} budget`
+    );
+  } catch (err) {
+    console.log(`  \x1b[33mBudget unavailable:\x1b[0m ${(err as Error).message}`);
+  }
+
   console.log(`\x1b[90m${"─".repeat(50)}\x1b[0m`);
   console.log(`\x1b[90mLog: ${COST_LOG_PATH}\x1b[0m`);
 }
 
 // Returns null for models without known pricing instead of guessing.
+function estimateRequestCost(model: string, size: ImageSize): number {
+  return IMAGE_PRICES[model]?.[size] ?? MAX_IMAGE_PRICE;
+}
+
+// Returns the budget in USD, or null when the guard is disabled.
+function loadMonthlyBudget(): number | null {
+  if (!existsSync(CONFIG_PATH)) return DEFAULT_MONTHLY_BUDGET;
+  let config: { monthlyBudget?: unknown };
+  try {
+    config = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+  } catch {
+    throw new Error(`${CONFIG_PATH} is not valid JSON`);
+  }
+  if (!("monthlyBudget" in config)) return DEFAULT_MONTHLY_BUDGET;
+  const budget = config.monthlyBudget;
+  if (budget === null) return null;
+  if (typeof budget !== "number" || budget < 0) {
+    throw new Error(`monthlyBudget in ${CONFIG_PATH} must be a non-negative number or null`);
+  }
+  return budget;
+}
+
+// Logged spend for the current calendar month (local time). Throws if the
+// log can't be read so the guard fails closed instead of assuming $0.
+function monthToDateSpend(): number {
+  if (!existsSync(COST_LOG_PATH)) return 0;
+  let entries: CostEntry[];
+  try {
+    entries = JSON.parse(readFileSync(COST_LOG_PATH, "utf-8"));
+    if (!Array.isArray(entries)) throw new Error("not an array");
+  } catch {
+    throw new Error(`${COST_LOG_PATH} is not a valid JSON array`);
+  }
+  const now = new Date();
+  return entries
+    .filter((e) => {
+      const t = new Date(e.timestamp);
+      return t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth();
+    })
+    .reduce((sum, e) => sum + (e.estimated_cost ?? 0), 0);
+}
+
+function enforceBudget(options: Options): void {
+  if (options.force) return;
+  let budget: number | null;
+  let spent: number;
+  try {
+    budget = loadMonthlyBudget();
+    if (budget === null) return;
+    spent = monthToDateSpend();
+  } catch (err) {
+    console.error(`\x1b[31mError:\x1b[0m spending guard can't run: ${(err as Error).message}`);
+    console.error("  Fix the file, or pass --force to generate anyway.");
+    process.exit(1);
+  }
+  const estimate = estimateRequestCost(options.model, options.size);
+  if (spent + estimate > budget) {
+    console.error(
+      `\x1b[31mError:\x1b[0m monthly budget reached: $${spent.toFixed(2)} spent this month, ` +
+        `this request ~$${estimate.toFixed(3)}, budget $${budget.toFixed(2)}.`
+    );
+    console.error(`  Raise "monthlyBudget" in ${CONFIG_PATH}, or pass --force for a one-off.`);
+    process.exit(1);
+  }
+}
+
 function calculateCost(
   model: string,
   usage: TokenUsage,
@@ -471,6 +563,7 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
   -r, --ref         Reference image(s) - can use multiple times
   -t, --transparent Generate on green screen, then remove background (FFmpeg colorkey + despill)
   --api-key         Gemini API key (overrides env/file)
+  --force           Skip the monthly budget check for this request
   --costs           Show cost summary from generation history
   -h, --help        Show this help
 
@@ -502,7 +595,12 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
   nano-banana "minimalist tech logo" -t -o logo
 
 \x1b[33mCost Tracking:\x1b[0m
-  nano-banana --costs    Show total spend and per-model breakdown
+  nano-banana --costs    Show total spend, per-model breakdown and budget
+
+\x1b[33mSpending Guard:\x1b[0m
+  Requests are refused once this month's logged spend plus the request's
+  estimate would exceed the budget ($${DEFAULT_MONTHLY_BUDGET} by default).
+  Change it in ~/.nano-banana/config.json: {"monthlyBudget": 25}, or null to disable.
 
 \x1b[33mAPI Key:\x1b[0m
   Set GEMINI_API_KEY in your environment, a .env file, or pass --api-key.
@@ -526,6 +624,7 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
     apiKey: undefined,
     model: DEFAULT_MODEL,
     aspectRatio: undefined,
+    force: false,
   };
 
   let i = 0;
@@ -560,6 +659,8 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
       options.transparent = true;
     } else if (arg === "--api-key") {
       options.apiKey = args[++i];
+    } else if (arg === "--force") {
+      options.force = true;
     } else if (!arg.startsWith("-")) {
       options.prompt = arg;
     }
@@ -765,6 +866,8 @@ if (parsed === "costs") {
 }
 
 const options = parsed;
+
+enforceBudget(options);
 
 generateImage(options)
   .then(async (files) => {
