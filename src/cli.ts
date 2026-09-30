@@ -15,7 +15,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { writeFile, mkdir, readFile } from "fs/promises";
-import { join, extname, basename, dirname } from "path";
+import { join, extname, basename, dirname, resolve } from "path";
 import { existsSync, readFileSync } from "fs";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
@@ -33,6 +33,9 @@ import { homedir } from "os";
 // shebang for the same reason.
 const ENV_WHITELIST = new Set(["GEMINI_API_KEY"]);
 
+// Which .env file supplied GEMINI_API_KEY (undefined if none did).
+let apiKeySource: string | undefined;
+
 function loadEnvFile(path: string): void {
   if (!existsSync(path)) return;
   const content = readFileSync(path, "utf-8");
@@ -45,6 +48,7 @@ function loadEnvFile(path: string): void {
       const value = valueParts.join("=").trim().replace(/^["']|["']$/g, "");
       if (value && !process.env[key]) {
         process.env[key] = value;
+        if (key === "GEMINI_API_KEY") apiKeySource = path;
       }
     }
   }
@@ -54,9 +58,17 @@ function loadEnvFile(path: string): void {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-loadEnvFile(join(process.cwd(), ".env"));
-loadEnvFile(join(__dirname, "..", ".env"));         // repo root .env
+const cwdEnvPath = join(process.cwd(), ".env");
+const repoEnvPath = join(__dirname, "..", ".env");
+
+loadEnvFile(cwdEnvPath);
+loadEnvFile(repoEnvPath);                           // repo root .env
 loadEnvFile(join(homedir(), ".nano-banana", ".env"));
+
+// A .env in the current directory wins over ~/.nano-banana, so running the
+// CLI inside another project silently uses (and bills) that project's key.
+const apiKeyFromForeignCwd =
+  apiKeySource === cwdEnvPath && resolve(cwdEnvPath) !== resolve(repoEnvPath);
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -489,6 +501,11 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
 
 async function generateImage(options: Options): Promise<string[]> {
   const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
+
+  if (!options.apiKey && apiKeyFromForeignCwd) {
+    console.error(`\x1b[33mWarning:\x1b[0m using GEMINI_API_KEY from ${cwdEnvPath}`);
+    console.error("  This .env overrides ~/.nano-banana/.env. Costs go to that key's project.");
+  }
 
   if (!apiKey) {
     console.error("\x1b[31mError:\x1b[0m GEMINI_API_KEY is required.");
