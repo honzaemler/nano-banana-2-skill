@@ -1,6 +1,6 @@
 # Nano Banana 2 Skill
 
-AI image generation CLI powered by Gemini 3.1 Flash Image Preview (default) with support for Gemini 3 Pro and any Gemini model. Multi-resolution (512-4K), aspect ratios, cost tracking, broadcast-grade green screen transparency, reference images, and style transfer.
+AI image generation CLI powered by Gemini 3.1 Flash Image (default) with support for Gemini 3 Pro and any Gemini model. Multi-resolution (512-4K), aspect ratios, cost tracking, broadcast-grade green screen transparency, reference images, and style transfer.
 
 Also ships as a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill for AI-assisted image generation workflows.
 
@@ -74,13 +74,13 @@ nano-banana "your prompt"
 nano-banana "your prompt" --model pro
 
 # Any model ID
-nano-banana "your prompt" --model gemini-2.5-flash-image
+nano-banana "your prompt" --model gemini-3.1-flash-image
 ```
 
 | Alias | Model | Best For |
 |-------|-------|----------|
-| `flash`, `nb2` | Gemini 3.1 Flash Image Preview | Speed, cost, high-volume |
-| `pro`, `nb-pro` | Gemini 3 Pro Image Preview | Highest quality, complex composition |
+| `flash`, `nb2` | Gemini 3.1 Flash Image | Speed, cost, high-volume |
+| `pro`, `nb-pro` | Gemini 3 Pro Image | Highest quality, complex composition |
 
 ### Aspect Ratios
 

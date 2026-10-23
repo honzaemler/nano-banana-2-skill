@@ -1,8 +1,8 @@
 #!/usr/bin/env -S bun --no-env-file
 /**
  * Nano Banana 2 - AI Image Generation CLI
- * Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
- * Also supports: Gemini 3 Pro Image Preview (Nano Banana Pro) and any model ID
+ * Default: Gemini 3.1 Flash Image (Nano Banana 2)
+ * Also supports: Gemini 3 Pro Image (Nano Banana Pro) and any model ID
  *
  * Usage:
  *   nano-banana "your prompt here"
@@ -75,13 +75,13 @@ const apiKeyFromForeignCwd =
 // ---------------------------------------------------------------------------
 
 const MODEL_ALIASES: Record<string, string> = {
-  flash: "gemini-3.1-flash-image-preview",
-  nb2: "gemini-3.1-flash-image-preview",
-  pro: "gemini-3-pro-image-preview",
-  "nb-pro": "gemini-3-pro-image-preview",
+  flash: "gemini-3.1-flash-image",
+  nb2: "gemini-3.1-flash-image",
+  pro: "gemini-3-pro-image",
+  "nb-pro": "gemini-3-pro-image",
 };
 
-const DEFAULT_MODEL = "gemini-3.1-flash-image-preview";
+const DEFAULT_MODEL = "gemini-3.1-flash-image";
 
 const VALID_SIZES = ["512", "1K", "2K", "4K"] as const;
 type ImageSize = (typeof VALID_SIZES)[number];
@@ -92,9 +92,12 @@ const VALID_ASPECTS = [
 ] as const;
 
 // Paid tier (standard) rates in USD per 1M tokens, per
-// https://ai.google.dev/gemini-api/docs/pricing (checked 2026-09-30).
+// https://ai.google.dev/gemini-api/docs/pricing (checked 2026-10-23). Preview IDs keep
+// their GA rates so an explicit --model never logs as $0.
 // textOutput also covers thinking tokens.
 const COST_RATES: Record<string, { input: number; textOutput: number; imageOutput: number }> = {
+  "gemini-3.1-flash-image": { input: 0.5, textOutput: 3, imageOutput: 60 },
+  "gemini-3-pro-image": { input: 2.0, textOutput: 12, imageOutput: 120 },
   "gemini-3.1-flash-image-preview": { input: 0.5, textOutput: 3, imageOutput: 60 },
   "gemini-3-pro-image-preview": { input: 2.0, textOutput: 12, imageOutput: 120 },
 };
@@ -107,6 +110,8 @@ const SEARCH_QUERY_COST = 14 / 1000;
 // Published per-image prices (USD), used to estimate a request before it is
 // sent. Unknown models or sizes fall back to the most expensive known price.
 const IMAGE_PRICES: Record<string, Partial<Record<ImageSize, number>>> = {
+  "gemini-3.1-flash-image": { "512": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151 },
+  "gemini-3-pro-image": { "1K": 0.134, "2K": 0.134, "4K": 0.24 },
   "gemini-3.1-flash-image-preview": { "512": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151 },
   "gemini-3-pro-image-preview": { "1K": 0.134, "2K": 0.134, "4K": 0.24 },
 };
@@ -559,7 +564,7 @@ function parseArgs(): Options | "costs" {
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
     console.log(`
 \x1b[36mNano Banana 2\x1b[0m - AI Image Generation CLI
-Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
+Default: Gemini 3.1 Flash Image (Nano Banana 2)
 
 \x1b[33mUsage:\x1b[0m
   nano-banana "your prompt"
@@ -582,9 +587,9 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
   -h, --help        Show this help
 
 \x1b[33mModels:\x1b[0m
-  flash, nb2    Gemini 3.1 Flash Image Preview (default, fast, cheap)
-  pro, nb-pro   Gemini 3 Pro Image Preview (highest quality, 2x cost)
-  <model-id>    Any Gemini model ID (e.g. gemini-2.5-flash-image)
+  flash, nb2    Gemini 3.1 Flash Image (default, fast, cheap)
+  pro, nb-pro   Gemini 3 Pro Image (highest quality, 2x cost)
+  <model-id>    Any Gemini model ID (e.g. gemini-3.1-flash-image)
 
 \x1b[33mSizes:\x1b[0m
   512   ~512x512   (~$0.045/image on Flash)
@@ -692,7 +697,7 @@ Default: Gemini 3.1 Flash Image Preview (Nano Banana 2)
   }
 
   // Warn if 512 is used with Pro model
-  if (options.size === "512" && options.model === "gemini-3-pro-image-preview") {
+  if (options.size === "512" && options.model.startsWith("gemini-3-pro-image")) {
     console.log("\x1b[33mWarning:\x1b[0m 512px resolution is only available on Flash. Switching to 1K.");
     options.size = "1K";
   }

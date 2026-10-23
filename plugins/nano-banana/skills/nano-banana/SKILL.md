@@ -5,7 +5,7 @@ description: Generates AI images using the nano-banana CLI (Gemini 3.1 Flash def
 
 # nano-banana
 
-AI image generation CLI. Default model: Gemini 3.1 Flash Image Preview (Nano Banana 2).
+AI image generation CLI. Default model: Gemini 3.1 Flash Image (Nano Banana 2).
 
 ## /init - First-Time Setup
 
