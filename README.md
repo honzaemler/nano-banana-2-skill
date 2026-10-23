@@ -10,7 +10,7 @@ Also ships as a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sk
 
 ```bash
 # Clone the repo
-git clone https://github.com/kingbootoshi/nano-banana-2-skill.git ~/tools/nano-banana-2
+git clone https://github.com/honzaemler/nano-banana-2-skill.git ~/tools/nano-banana-2
 cd ~/tools/nano-banana-2
 
 # Install dependencies
