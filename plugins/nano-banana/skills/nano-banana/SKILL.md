@@ -15,7 +15,7 @@ When the user says "init", "setup nano-banana", or "install nano-banana", run th
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/kingbootoshi/nano-banana-2-skill.git ~/tools/nano-banana-2
+git clone https://github.com/honzaemler/nano-banana-2-skill.git ~/tools/nano-banana-2
 
 # 2. Install dependencies
 cd ~/tools/nano-banana-2 && bun install

@@ -137,6 +137,7 @@ interface Options {
   model: string;
   aspectRatio: string | undefined;
   force: boolean;
+  search: boolean;
 }
 
 interface CostEntry {
@@ -387,7 +388,9 @@ function monthToDateSpend(): number {
       const t = new Date(e.timestamp);
       return t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth();
     })
-    .reduce((sum, e) => sum + (e.estimated_cost ?? 0), 0);
+    // An unpriced model (estimated_cost null) counts at the top per-image price,
+    // otherwise any model missing from IMAGE_PRICES would bypass the budget.
+    .reduce((sum, e) => sum + (e.estimated_cost ?? MAX_IMAGE_PRICE), 0);
 }
 
 function enforceBudget(options: Options): void {
@@ -583,6 +586,7 @@ Default: Gemini 3.1 Flash Image (Nano Banana 2)
   -t, --transparent Generate on green screen, then remove background (FFmpeg colorkey + despill)
   --api-key-stdin   Read the Gemini API key from stdin (overrides env/file)
   --force           Skip the monthly budget check for this request
+  --no-search       Disable Google Search grounding (no search query cost)
   --costs           Show cost summary from generation history
   -h, --help        Show this help
 
@@ -644,6 +648,7 @@ Default: Gemini 3.1 Flash Image (Nano Banana 2)
     model: DEFAULT_MODEL,
     aspectRatio: undefined,
     force: false,
+    search: true,
   };
 
   let i = 0;
@@ -685,6 +690,8 @@ Default: Gemini 3.1 Flash Image (Nano Banana 2)
       options.apiKey = readApiKeyFromStdin();
     } else if (arg === "--force") {
       options.force = true;
+    } else if (arg === "--no-search") {
+      options.search = false;
     } else if (!arg.startsWith("-")) {
       options.prompt = arg;
     }
@@ -743,7 +750,7 @@ async function generateImage(options: Options): Promise<string[]> {
   const config = {
     responseModalities: ["IMAGE", "TEXT"] as const,
     imageConfig,
-    tools: [{ googleSearch: {} }],
+    ...(options.search ? { tools: [{ googleSearch: {} }] } : {}),
   };
 
   const modelName = options.model;
@@ -870,8 +877,11 @@ async function generateImage(options: Options): Promise<string[]> {
       output_file: savedFiles[0] || "",
     };
 
-    await logCost(entry).catch(() => {
-      // Non-fatal - don't fail generation if cost logging fails
+    await logCost(entry).catch((err) => {
+      // Non-fatal for the image, but a lost entry weakens the budget guard
+      console.error(
+        `\x1b[33mWarning:\x1b[0m cost not logged (${(err as Error).message}), budget check will undercount.`
+      );
     });
   }
 
